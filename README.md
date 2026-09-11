@@ -1,390 +1,512 @@
-# CBC Blood Report Data Preparation & Analysis
-
-**Data Cleaning and Exploratory Data Analysis for Complete Blood Count (CBC) Diagnostic Dataset**
-
-Part of the **AI-Based Multi-Agent Diagnostic Assistant** capstone project.
-
----
+# CBC Dataset Analysis & Data Cleaning
 
 ## Overview
 
-This repository contains a comprehensive data preparation and exploratory data analysis pipeline for Complete Blood Count (CBC) laboratory reports. The goal is to transform raw, messy hematology data into a clean, validated dataset suitable for downstream disease diagnostic modeling.
+This project focuses on exploring, validating, cleaning, and preparing a
+Complete Blood Count (CBC) dataset for downstream machine-learning model
+training.
 
-**Key outputs:**
-- Cleaned CBC dataset: 1,193 rows × 13 medical features + diagnosis labels
-- 9 diagnosis classes: Healthy, Iron deficiency anemia, Normocytic anemia (3 subtypes), Macrocytic anemia, Leukemia, Thrombocytopenia, and Leukemia with thrombocytopenia
-- Full data quality audit with documented cleaning decisions
-- Exploratory visualizations: class distribution, feature histograms, per-class boxplots, correlation analysis, pairplots
+The notebook works with CBC laboratory features and a `Diagnosis`
+target. The workflow emphasizes data quality before modeling:
+identifying redundant features, reconstructing derived values, detecting
+physiologically implausible values, checking internal consistency
+between CBC measurements, removing duplicates and incomplete records,
+exploring class distribution, visualizing the cleaned data, scaling
+selected features, and exporting a final modeling-ready dataset.
 
----
+> **Note:** This README describes what is implemented in the provided
+> notebook. The notebook performs data preparation and exploratory
+> analysis; it does not train or evaluate a diagnostic machine-learning
+> model.
 
 ## Dataset
 
-### Source
-- **Original dataset:** Complete Blood Count (CBC) results from laboratory tests
-- **Size:** 1,281 rows (before cleaning) → **1,193 rows** (after quality assurance)
-- **Features:** 15 columns (14 numeric CBC parameters + 1 diagnosis label)
+The original dataset contains **1,281 rows and 15 columns**:
 
-### Features (13 diagnostic parameters retained)
+-   14 numerical CBC-related features
+-   1 categorical target: `Diagnosis`
 
-| Parameter | Unit | Clinical Significance |
-|---|---|---|
-| **WBC** | thousands/μL | White blood cell count; elevated in infections, leukemia |
-| **RBC** | millions/μL | Red blood cell count; low in anemia |
-| **HGB** | g/dL | Hemoglobin; oxygen-carrying capacity; diagnostic for anemia |
-| **HCT** | % | Hematocrit; volume fraction of RBCs |
-| **MCV** | fL | Mean corpuscular volume; classifies anemia subtype (microcytic, normocytic, macrocytic) |
-| **MCH** | pg | Mean corpuscular hemoglobin per cell |
-| **MCHC** | g/dL | Mean corpuscular hemoglobin concentration |
-| **PLT** | thousands/μL | Platelet count; low in thrombocytopenia, elevated in clotting disorders |
-| **PDW** | % | Platelet distribution width; platelet morphology variability |
-| **LYMn** | thousands/μL | Absolute lymphocyte count |
-| **LYMp** | % | Lymphocyte percentage (derived) |
-| **NEUTn** | thousands/μL | Absolute neutrophil count |
-| **NEUTp** | % | Neutrophil percentage (derived) |
+The target contains the following diagnostic classes:
 
-### Target Classes (9 diagnosis labels)
-1. Healthy (n=336)
-2. Normocytic hypochromic anemia (n=255)
-3. Iron deficiency anemia (n=175)
-4. Normocytic normochromic anemia (n=252)
-5. Other microcytic anemia (n=50)
-6. Macrocytic anemia (n=14)
-7. Thrombocytopenia (n=69)
-8. Leukemia (n=43)
-9. Leukemia with thrombocytopenia (n=11) — **rare class**
+  Diagnosis                          Initial Count   Initial %
+  -------------------------------- --------------- -----------
+  Healthy                                      323      26.32%
+  Normocytic hypochromic anemia                266      21.68%
+  Normocytic normochromic anemia               255      20.78%
+  Iron deficiency anemia                       184      15.00%
+  Thrombocytopenia                              72       5.87%
+  Other microcytic anemia                       56       4.56%
+  Leukemia                                      44       3.59%
+  Macrocytic anemia                             16       1.30%
+  Leukemia with thrombocytopenia                11       0.90%
 
----
+The notebook also identifies suspicious repeated values in several
+percentage/count-derived fields, which motivated feature reconstruction
+and cleaning.
 
-## Data Quality Issues Found & Resolved
+## Features
 
-### Issue 1: Hidden Imputation in WBC Differential Columns
-**Problem:** Columns `LYMp` (lymphocyte %), `NEUTp` (neutrophil %), `PDW` (platelet distribution width), and `PCT` (plateletcrit) contained 781 rows (61% of data) with identical repeated values → evidence of mean-value imputation without documentation.
+The main CBC variables used in the analysis are:
 
-**Solution:** 
-- Derived new `LYMp` and `NEUTp` from clean absolute counts: `LYMp = (LYMn / WBC) × 100`
-- Dropped original corrupted `LYMp`, `NEUTp`, `PCT` columns
-- Retained `PDW` (independent measurement) after validation
+-   `WBC`
+-   `LYMn`
+-   `LYMp`
+-   `NEUTn`
+-   `NEUTp`
+-   `RBC`
+-   `HGB`
+-   `HCT`
+-   `MCV`
+-   `MCH`
+-   `MCHC`
+-   `PLT`
+-   `PDW`
 
-### Issue 2: Physically Impossible Values
-**Problem:** 
-- Negative hemoglobin values (HGB < 0)
-- RBC values > 90 million/μL (physiological max ~6.5)
-- HGB > 25 g/dL (physiological max ~20)
-- Negative MCV values
+Target:
 
-**Solution:** 
-- Converted 34 rows with impossible values to NaN
-- Removed those rows entirely (2.7% of data) rather than imputing, preserving data integrity for medical use
+-   `Diagnosis`
 
-### Issue 3: HCT Consistency Anomaly
-**Problem:** 476 rows (38% of dataset) showed HCT values consistent with calculated formula `HCT = (RBC × MCV) / 10`, indicating HCT was computed from other measurements rather than independently measured.
+## Workflow
 
-**Solution:** 
-- Investigated distribution: spike at ratio=1.0 + tail of truly measured values
-- Documented this split but retained all rows
-- HCT is independently measured by modern analyzers, so mathematical relationship variability is expected and acceptable
+The analysis follows this pipeline:
 
-### Issue 4: Exact Duplicate Rows
-**Problem:** 49 rows were exact duplicates
+``` text
+Raw CBC Data
+     |
+     v
+Initial inspection
+     |
+     v
+Identify redundant / suspicious fields
+     |
+     v
+Recalculate LYMp and NEUTp
+     |
+     v
+Physiological range validation
+     |
+     v
+Convert implausible values to NaN
+     |
+     v
+Remove duplicate records
+     |
+     v
+Validate HCT consistency
+     |
+     v
+Check NaN impact by diagnosis
+     |
+     v
+Remove incomplete core CBC records
+     |
+     v
+EDA and visualization
+     |
+     v
+Feature scaling for visualization
+     |
+     v
+Final validation
+     |
+     v
+Export cleaned CSV
+```
 
-**Solution:** Removed all 49 duplicates
+## Problems Faced and How They Were Addressed
 
-### Issue 5: Class Imbalance
-**Problem:** Extreme imbalance — Healthy (336 samples) vs. Leukemia with thrombocytopenia (11 samples)
+### 1. Redundant and suspicious feature values
 
-**Solution:** Documented for downstream modeling; will require SMOTE oversampling during ML training, not during data cleaning
+Some columns contained repeated values that did not provide reliable
+independent information. For example, `LYMp`, `NEUTp`, and `PCT` showed
+highly repeated values, with `LYMp` containing the same value 781 times
+and `NEUTp` containing the same value 781 times.
 
----
+**Approach:**
 
-## Data Cleaning Pipeline
+-   Removed `PCT`, `LYMp`, and `NEUTp` initially.
+-   Kept the absolute-count variables `LYMn` and `NEUTn`.
+-   Reconstructed the percentage variables from their underlying counts
+    and `WBC`.
 
-### Step 1: Load & Validate Structure
-- Load raw CSV (1,281 rows × 15 columns)
-- Check data types, null values, column structure
+The notebook calculates:
 
-### Step 2: Feature Engineering (WBC Differential)
-- Derive `LYMp = (LYMn / WBC) × 100`
-- Derive `NEUTp = (NEUTn / WBC) × 100`
-- Handle division by zero (WBC = 0) → set to NaN
-- Drop original corrupted columns: `LYMp_old`, `NEUTp_old`, `PCT`
+``` python
+LYMp = (LYMn / WBC) * 100
+NEUTp = (NEUTn / WBC) * 100
+```
 
-### Step 3: Remove Impossible Values
-Applied physiological range checks:
-- HGB: Keep 5 < HGB < 25 g/dL
-- MCV: Keep 50 < MCV < 130 fL
-- RBC: Keep 2 < RBC < 8 millions/μL
-- HCT: Keep 15 < HCT < 60 %
-- PLT: Keep 50 < PLT < 500 thousands/μL
-- WBC: Keep 2 < WBC < 45 thousands/μL
+This preserves the relationship between the absolute and percentage
+measurements rather than trusting suspicious repeated values.
 
-Converted violations to NaN (34 rows affected)
+### 2. Physiologically implausible values
 
-### Step 4: Investigate HCT Consistency
-- Calculate expected: `HCT_expected = (RBC × MCV) / 10`
-- Calculate ratio: `HCT_actual / HCT_expected`
-- Identified and documented calculated vs. independently-measured rows
-- Decision: retain all rows; data quality acceptable
+The initial descriptive statistics revealed extreme values, including
+negative or unusually large measurements. Examples included:
 
-### Step 5: Remove Duplicates
-- Identified and removed 49 exact duplicate rows
+-   `HGB` minimum of `-10`
+-   `MCV` minimum of `-79.3`
+-   `NEUTp` maximum of `5317`
+-   `HCT` maximum of `3715`
+-   `RBC` maximum of `90.8`
 
-### Step 6: Drop Audit Columns
-- Removed temporary calculation columns (`HCT_expected`, `HCT_ratio`, `HCT_source`, etc.)
-- Kept only the 13 core CBC features + Diagnosis label
+These values could distort exploratory analysis and any model trained on
+the data.
 
-### Step 7: Remove NaN Rows
-- Removed 34 rows with NaN in core CBC parameters
-- **Final dataset: 1,193 rows × 14 columns**
+**Approach:**
 
----
+The notebook defined explicit validation ranges for key CBC variables:
 
-## Exploratory Data Analysis (EDA)
+``` python
+HGB: 5–25
+RBC: 2–8
+MCV: 50–130
+HCT: 15–60
+PLT: 30–700
+WBC: 2–30
+```
 
-### Visualizations Generated
+Values outside these ranges were treated as invalid and converted to
+`NaN` instead of being silently retained.
 
-#### 1. **Pairplot: Key Features by Diagnosis Class**
-![CBC Pairplot](visualizations/pairplot_cbc.png)
+The initial invalid-value counts were:
 
-*4-feature scatter matrix (HGB, MCV, PLT, WBC) showing clear visual separation of diagnosis classes. Each point represents one patient, colored by diagnosis.*
+  Feature     Invalid Values
+  --------- ----------------
+  HGB                     13
+  RBC                     11
+  MCV                      8
+  HCT                      9
+  PLT                      9
+  WBC                      5
 
-**Key observations:**
-- Iron deficiency anemia clusters bottom-left (low HGB, low MCV)
-- Healthy patients cluster top-middle (high HGB, normal MCV)
-- Thrombocytopenia shows very low PLT (bottom-left of PLT plots)
-- Leukemia shows high WBC (right side of WBC plots)
+This affected 34 rows before duplicate removal.
 
----
+### 3. Duplicate records
 
-#### 2. **Feature Relationships: Four Critical Scatter Plots**
-![Feature Relationships](visualizations/feature_relationships.png)
+After invalid values were marked as missing, the dataset contained **54
+duplicate rows**.
 
-*Shows diagnostic power of key feature combinations:*
-- **HGB vs MCV:** Anemia subtype classification (iron deficiency, macrocytic, normocytic)
-- **HGB vs PLT:** Discriminates between anemia and thrombocytopenia
-- **WBC vs MCV:** Leukemia detection by elevated WBC
-- **WBC vs PLT:** Leukemia with thrombocytopenia (high WBC + low PLT)
+**Approach:**
 
----
+The notebook used:
 
-#### 3. **Correlation Heatmap: Feature Dependencies**
-![Correlation Heatmap](visualizations/correlation_heatmap.png)
+``` python
+df_copy = df_copy.drop_duplicates().copy()
+```
 
-*Shows relationships between all 13 CBC parameters:*
+This reduced the dataset from 1,281 rows to **1,227 rows**, with zero
+duplicates remaining.
 
-**Strongest correlations (expected):**
-- RBC ↔ HGB: 0.72 (both measure oxygen-carrying capacity)
-- HGB ↔ HCT: 0.60 (hematocrit derived from hemoglobin)
-- LYMn ↔ LYMp: 0.58 (derived from same raw data)
-- NEUTn ↔ NEUTp: 0.72 (derived from same raw data)
+### 4. Internal consistency of HCT
 
-**Negative correlations (clinically meaningful):**
-- WBC ↔ LYMp: -0.49 (leukemia patients show neutrophil shift, lower lymphocyte %)
+A particularly important data-quality problem was whether `HCT` was
+consistent with `RBC` and `MCV`.
 
-**Conclusion:** No problematic multicollinearity; most features are independent and capture different diagnostic aspects.
+The notebook used the relationship:
 
----
+``` text
+HCT ≈ (RBC × MCV) / 10
+```
 
-#### 4. **Class Distribution Bar Chart**
-- Shows count of each diagnosis class
-- Highlights class imbalance (Leukemia with thrombocytopenia: only 11 samples)
+An expected HCT was calculated and compared with the recorded HCT.
+Relative error was then evaluated.
 
-#### 5. **Feature Histograms (per-feature distributions)**
-- All 13 features visualized
-- Confirms absence of negative/impossible values post-cleaning
-- Shows expected multimodal distributions for anemia subtypes
+A 10% threshold initially flagged a substantial number of observations.
+The notebook also tested several thresholds:
 
-#### 6. **Boxplots by Diagnosis Class (critical for validation)**
-- Each of 13 features plotted across all 9 diagnosis classes
-- Confirms features have real diagnostic signal across all classes
+  Relative-error threshold     Rows flagged
+  -------------------------- --------------
+  5%                                    623
+  10%                                   516
+  15%                                   377
+  20%                                   304
 
----
+This investigation showed that the discrepancy was widespread rather
+than limited to a handful of obvious errors.
+
+**Decision:**
+
+The notebook did not automatically replace all measured HCT values with
+calculated values. Instead, it investigated the ratio between actual and
+calculated HCT and retained the available HCT information rather than
+aggressively overwriting it.
+
+This is an important data-engineering choice: a consistency check can
+identify questionable records without automatically assuming that the
+derived value is always superior to the recorded measurement.
+
+### 5. Missing values affecting minority classes
+
+After invalid measurements were converted to `NaN`, the notebook checked
+whether missingness disproportionately affected particular diagnostic
+classes.
+
+The affected records included:
+
+-   Iron deficiency anemia: 9
+-   Normocytic hypochromic anemia: 9
+-   Other microcytic anemia: 6
+-   Normocytic normochromic anemia: 3
+-   Thrombocytopenia: 3
+-   Macrocytic anemia: 2
+-   Leukemia: 1
+
+The percentage impact was also inspected. For example,
+`Macrocytic anemia` had 2 affected records out of 16 (12.5%), while
+`Other microcytic anemia` had 6 out of 56 (10.7%).
+
+**Approach:**
+
+Rather than deleting rows immediately, the notebook first reported the
+impact by diagnosis. After this check, rows containing missing values in
+the core CBC parameters were removed.
+
+This resulted in a final cleaned dataset of **1,194 rows**.
+
+### 6. Class imbalance
+
+The cleaned dataset remained imbalanced. The largest class was `Healthy`
+with 323 records, while `Leukemia with thrombocytopenia` had only 11
+records.
+
+**Approach:**
+
+The notebook explicitly measured class counts and percentages and
+visualized the distribution.
+
+The final class distribution was:
+
+  Diagnosis                          Final Count
+  -------------------------------- -------------
+  Healthy                                    323
+  Normocytic hypochromic anemia              257
+  Normocytic normochromic anemia             252
+  Iron deficiency anemia                     175
+  Thrombocytopenia                            69
+  Other microcytic anemia                     50
+  Leukemia                                    43
+  Macrocytic anemia                           14
+  Leukemia with thrombocytopenia              11
+
+The imbalance is documented rather than artificially corrected in this
+notebook.
+
+### 7. Different feature scales
+
+CBC variables have very different numerical scales. For example,
+platelet count and hemoglobin values naturally operate on very different
+ranges.
+
+**Approach:**
+
+`StandardScaler` was applied to:
+
+-   `HGB`
+-   `MCV`
+-   `PLT`
+-   `WBC`
+
+The scaled values were then used for an additional pairplot to make
+feature relationships easier to visually compare.
+
+## Exploratory Data Analysis
+
+The notebook performs several forms of EDA:
+
+### Distribution analysis
+
+Histograms are generated for the numerical CBC features to inspect their
+distributions.
+
+### Diagnosis-level comparison
+
+Boxplots compare each numerical CBC feature across the diagnostic
+classes.
+
+### Correlation analysis
+
+A correlation heatmap is generated for the numerical features to inspect
+linear relationships and potential redundancy.
+
+### Pairwise relationships
+
+Pairplots are generated for selected features:
+
+-   `HGB`
+-   `MCV`
+-   `PLT`
+-   `WBC`
+
+The diagnostic class is used as the hue to visually inspect class
+separation.
+
+## Final Dataset
+
+After cleaning:
+
+-   **Rows:** 1,194
+-   **Columns:** 14
+-   **Missing values:** None
+-   **Duplicate rows:** None
+-   **Target:** `Diagnosis`
+
+The final columns are:
+
+``` text
+WBC
+LYMn
+NEUTn
+RBC
+HGB
+HCT
+MCV
+MCH
+MCHC
+PLT
+PDW
+Diagnosis
+LYMp
+NEUTp
+```
+
+The notebook verifies that the exported CSV can be reloaded and that its
+shape matches the cleaned dataframe:
+
+``` text
+Loaded: (1194, 14), matches original: True
+```
+
+## Technologies Used
+
+-   Python
+-   Pandas
+-   NumPy
+-   Matplotlib
+-   Seaborn
+-   Scikit-learn
+
+Key techniques:
+
+-   Data inspection
+-   Descriptive statistics
+-   Feature reconstruction
+-   Rule-based data validation
+-   Missing-value handling
+-   Duplicate removal
+-   Consistency checks
+-   Exploratory data analysis
+-   Correlation analysis
+-   Feature scaling
+-   CSV export
+
+## How to Run
+
+### 1. Install dependencies
+
+``` bash
+pip install pandas numpy matplotlib seaborn scikit-learn jupyter
+```
+
+### 2. Prepare the dataset
+
+Place the source CSV in an accessible location and update the path in
+the notebook:
+
+``` python
+df = pd.read_csv("path/to/diagnosed_cbc_data_v4.csv")
+```
+
+The provided notebook currently contains a local Windows path, so this
+should be changed when running on another machine.
+
+### 3. Open the notebook
+
+``` bash
+jupyter notebook cbc_analysis.ipynb
+```
+
+or use JupyterLab / Google Colab.
+
+### 4. Run the notebook
+
+Execute the cells sequentially. The notebook performs cleaning,
+validation, visualization, scaling, and final export.
+
+### 5. Output
+
+The cleaned dataset is exported as:
+
+``` text
+cbc_cleaned_dataset_final.csv
+```
+
+## Key Learning Outcomes
+
+This project demonstrates that data preprocessing is more than simply
+removing null values.
+
+The major lessons from the workflow are:
+
+1.  **Inspect the raw data before modeling.** Extreme values can reveal
+    data corruption or extraction problems.
+2.  **Use domain relationships as validation rules.** The HCT/RBC/MCV
+    relationship provides a useful internal consistency check.
+3.  **Do not blindly trust derived columns.** Reconstructing percentage
+    features from their underlying counts can be more defensible when
+    repeated or suspicious values are present.
+4.  **Measure the impact of cleaning decisions.** Checking missingness
+    by diagnosis helps reveal whether cleaning disproportionately
+    affects minority classes.
+5.  **Document class imbalance before model training.** A model can
+    appear strong while performing poorly on rare classes.
+6.  **Separate data cleaning from modeling.** This notebook prepares a
+    clean dataset but does not claim that the resulting data is
+    clinically validated or that it is ready for clinical deployment.
+
+## Limitations and Next Steps
+
+The notebook is a data-cleaning and EDA stage rather than a complete
+diagnostic ML system.
+
+Potential next steps include:
+
+-   Train baseline classification models.
+-   Use stratified train/validation/test splits.
+-   Address class imbalance using appropriate training techniques.
+-   Evaluate precision, recall, F1-score, confusion matrices, and
+    per-class performance.
+-   Investigate whether calculated and measured HCT values should be
+    treated differently.
+-   Validate the selected physiological ranges against authoritative
+    clinical reference ranges and the population represented by the
+    dataset.
+-   Perform feature selection and compare model performance with and
+    without derived percentage features.
+-   Use cross-validation and hyperparameter tuning.
+-   Assess model calibration and error patterns, especially for rare
+    diagnoses.
+-   Add an independent validation dataset before making claims about
+    generalization.
 
 ## Project Structure
 
-```
-cbc-data-analysis/
-├── README.md                              (this file)
-├── DATA_QUALITY_AUDIT.md                  (detailed cleaning decisions)
-├── NOTEBOOKS_README.md                    (how to run each notebook)
-├── requirements.txt                       (Python dependencies)
-├── .gitignore                             (Git configuration)
-├── data/
-│   ├── raw/
-│   │   └── diagnosed_cbc_data_v4.csv      (original, unmodified)
-│   └── processed/
-│       └── cbc_cleaned_final.csv          (cleaned, ready for ML)
-├── notebooks/
-│   ├── 1_data_preparation.ipynb           (cleaning pipeline)
-│   └── 2_eda_visualization.ipynb          (all visualizations)
-└── visualizations/
-    ├── pairplot_cbc.png                   (4-feature pairplot by class)
-    ├── feature_relationships.png          (scatter plots of key combinations)
-    ├── correlation_heatmap.png            (feature interdependencies)
-    ├── class_distribution.png             (diagnosis class counts)
-    ├── histograms/                        (per-feature distributions)
-    └── boxplots_by_diagnosis/             (per-feature by diagnosis class)
+A recommended repository structure is:
+
+``` text
+cbc-analysis/
+│
+├── cbc_analysis.ipynb
+├── data  
+├── README.md
+└── requirements.txt
 ```
 
----
+## Disclaimer
 
-## Key Cleaning Decisions (Data Analyst Perspective)
-
-### Decision 1: Derive vs. Impute WBC Differential
-- **Chose:** Derive `LYMp`, `NEUTp` from absolute counts (`LYMn`, `NEUTn`, `WBC`)
-- **Rationale:** Original corrupted columns (61% imputed means) had lost signal. Derivation recovers information from clean source columns without adding artificial data.
-- **Impact:** Restored 1,270 rows with valid WBC differential information
-
-### Decision 2: Drop vs. Impute Impossible Values
-- **Chose:** Drop 34 rows with physically impossible values
-- **Rationale:** 
-  - Small sample loss (2.7% of dataset)
-  - Rare classes preserved (only 1 Leukemia case lost, 0 Leukemia+thrombocytopenia lost)
-  - Corruption suggests entire row unreliable, not just one column
-  - More defensible than imputation for medical data
-- **Impact:** Final dataset of 1,193 samples, all feasible
-
-### Decision 3: Retain HCT Calculated Rows
-- **Chose:** Keep all rows despite 38% being mathematically derived
-- **Rationale:**
-  - Modern hematology analyzers report both measured and calculated values
-  - No evidence of corruption; just measurement method documentation
-  - Removing would drop 476 samples (40%) with real underlying RBC/MCV data
-  - Documented but did not penalize; downstream models handle naturally
-- **Impact:** Preserved data volume and signal
-
-### Decision 4: Handle Class Imbalance
-- **Chose:** Document and flag, handle downstream during ML (SMOTE in cross-validation pipeline)
-- **Rationale:**
-  - Data cleaning phase shouldn't artificially rebalance; that's a modeling choice
-  - Stratified splitting will ensure rare classes in both train and test
-  - SMOTE inside CV folds prevents data leakage
-- **Impact:** Clean separation of concerns: data quality (here) vs. learning strategy (ML phase)
-
----
-
-## Data Quality Metrics (Post-Cleaning)
-
-| Metric | Value |
-|---|---|
-| Total rows | 1,193 |
-| Total features | 13 |
-| Missing values | 0 |
-| Duplicate rows | 0 |
-| Impossible values | 0 |
-| Rows with derived features | 1,193 (100%) |
-| Rows with measured all others | ~717 (60%) |
-| Diagnosis classes | 9 |
-| Smallest class size | 11 (Leukemia with thrombocytopenia) |
-| Largest class size | 336 (Healthy) |
-| Class imbalance ratio | 30.5:1 |
-
----
-
-## Usage
-
-### Prerequisites
-```bash
-python 3.8+
-pandas
-numpy
-matplotlib
-seaborn
-scikit-learn
-```
-
-### Install dependencies
-```bash
-pip install -r requirements.txt
-```
-
-### Run data cleaning notebook
-```bash
-jupyter notebook notebooks/1_data_preparation.ipynb
-# Outputs: data/processed/cbc_cleaned_final.csv
-```
-
-### Run EDA notebook
-```bash
-jupyter notebook notebooks/2_eda_visualization.ipynb
-# Outputs: visualizations in reports/visualizations/
-```
-
-### Load cleaned data for downstream use
-```python
-import pandas as pd
-
-df_clean = pd.read_csv('data/processed/cbc_cleaned_final.csv')
-
-# Features (13)
-features = ['WBC', 'RBC', 'HGB', 'HCT', 'MCV', 'MCH', 'MCHC', 'PLT', 'PDW', 'LYMn', 'LYMp', 'NEUTn', 'NEUTp']
-X = df_clean[features]
-
-# Target (9 classes)
-y = df_clean['Diagnosis']
-
-print(f"Shape: {X.shape}")
-print(f"Classes: {y.unique()}")
-```
-
----
-
-## Downstream Application
-
-**This cleaned dataset feeds into:** Blood abnormality classification model (XGBoost + SMOTE pipeline)
-
-**Expected usage:**
-- Input: Raw CBC lab report (13 parameters)
-- Processing: Apply same cleaning transformations (derive LYMp/NEUTp, validate ranges)
-- Output: Diagnosis prediction + confidence + SHAP explainability
-
----
-
-## Limitations & Caveats
-
-1. **Single-source data:** All samples from one lab; lab-specific measurement protocols, equipment, and reference ranges may differ from other facilities
-2. **Rule-derived labels:** Diagnosis classes likely derived from CBC cutoff thresholds; real-world noisier data expected to show overlap
-3. **Rare class imbalance:** Leukemia (44 samples) and Leukemia with thrombocytopenia (11 samples) are statistically underpowered for robust model evaluation
-4. **No longitudinal data:** Single snapshot per patient; no time-series or follow-up information
-5. **No clinical outcomes:** Diagnosis labels not validated against actual patient outcomes; labels may represent lab-based classification, not confirmed clinical diagnosis
-
----
-
-## Data Quality Report
-
-For detailed explanations of every cleaning decision, see:
-**[reports/data_quality_audit.md](reports/data_quality_audit.md)**
-
----
-
-## Author
-
-**Manas Dhotre**  
-Data Analyst | CSE Department  
-Brahmdevdada Mane Institute of Technology (BMIT), Solapur  
-A.Y. 2026-27
-
-**Supervised by:** Prof. S.A. Chabukswar
-
----
-
-## License
-
-This dataset and analysis are part of an academic capstone project. Use for educational and research purposes only.
-
----
-
-## Acknowledgments
-
-- Collaborators: Sangram Patil, Onkar Hiremath, Balu Nandiwale
-- Guidance: Prof. S.A. Chabukswar
-- Part of: AI-Based Multi-Agent Diagnostic Assistant capstone project
-
----
-
-## Questions?
-
-For questions about data preparation, cleaning decisions, or EDA:
-- Review [notebooks/README_notebooks.md](notebooks/README_notebooks.md) for notebook-specific details
-- Check [reports/data_quality_audit.md](reports/data_quality_audit.md) for decision justifications
-- Contact: [your email or GitHub issues]
+This project is an educational/data-science workflow for CBC dataset
+analysis and preparation. The diagnostic labels and preprocessing
+decisions in the dataset should not be interpreted as medical advice or
+as a clinically validated diagnostic system. Any clinical application
+would require appropriate medical validation, governance, and
+independent evaluation.
